@@ -10,7 +10,7 @@ import urllib.parse
 import traceback
 # use the path to the driver you downloaded from previous steps
 chromedrive_path = './chromedriver'
-
+timeout_in_ms=0 #disable the timeout
 
 json_file_path = './json_title_link/'
 review_file_path = './json_reviews/'
@@ -89,7 +89,7 @@ def run_driver_sync_playwright(url, id):
         browser = pw.chromium.launch(headless=True)
         # creates a new browser page (tab) within the browser instance
         page = browser.new_page()
-        page.goto(url)
+        page.goto(url,timeout=timeout_in_ms)
         # scrolling
         for i in range(4):
             # tackle the body element
@@ -106,7 +106,7 @@ def run_driver_sync_playwright(url, id):
             last_category_location = page.locator(
                 f"text={last_category_in_page}")
             last_category_location.scroll_into_view_if_needed()
-
+        print(f"link scrapping of id {id}")
         # get links of all categories after scroll
         links = [item.get('href') for item in soup.select('.hfpxzc')]
 
@@ -126,23 +126,24 @@ def run_driver_sync_playwright(url, id):
     return making_res
 
 
-def reviews_scrap(items):
+def reviews_scrap(items, search_key):
     review_items = []
     with sync_playwright() as pw:
         # creates an instance of the Chromium browser and launches it
-        browser = pw.chromium.launch(headless=False)
+        browser = pw.chromium.launch(headless=True)
         # creates a new browser page (tab) within the browser instance
         page = browser.new_page()
         for item in items:
             try:
-                page.goto(item['link'])
+                print(f"review scrapping of {item['title']}")
+                page.goto(item['link'],timeout=timeout_in_ms)
                 time.sleep(4)
                 page_url = page.url
                 pts = page_url.split('/')[-1]
                 # lat lon
                 latitude = pts.split('!3d')[1].split('!')[0]
                 longitude = pts.split('!4d')[1].split('!')[0]
-                
+
                 # load all reviews
                 page.locator("text='Reviews'").first.click()
                 time.sleep(4)
@@ -152,7 +153,7 @@ def reviews_scrap(items):
 
                 # create beautiful soup element
                 soup = BeautifulSoup(html, 'html.parser')
-                
+
                 rating_elm = soup.select('.jANrlb .fontDisplayLarge')
                 ratings = [rating.text for rating in rating_elm]
                 # scrape reviews
@@ -166,7 +167,8 @@ def reviews_scrap(items):
                     'id': item['id'],
                     'latitude': latitude,
                     'longitude': longitude,
-                    'avg_ratings': ratings[0] if len(ratings) else 0
+                    'avg_ratings': ratings[0] if len(ratings) else 0,
+                    'category': search_key
                 })
             except Exception as e:
                 print(
@@ -176,13 +178,14 @@ def reviews_scrap(items):
 
 
 def main():
+    print("__running__")
     df = file_input('./location.csv')
     location_dict_list = csv_to_dict_list(df)
     for dt in location_dict_list:
         url = making_url(dt['lat'], dt['lon'], dt['search_key'])
         title_link = run_driver_sync_playwright(url, dt['id'])
         # print(title_link)
-        reviews = reviews_scrap(title_link)
+        reviews = reviews_scrap(title_link, dt['search_key'])
         with open(f'{review_file_path}{dt["id"]}.json', 'w') as json_file:
             json.dump(reviews, json_file, indent=4)
 
